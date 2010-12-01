@@ -3,7 +3,7 @@
 #
 
 # set the TEAM name the same as in mm.c
-TEAM=xyzzy
+TEAM=dorman1+plaugh1
 
 # default version number for first handin
 VERSION=1
