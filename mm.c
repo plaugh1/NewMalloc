@@ -43,7 +43,7 @@ static struct s_block *heap_listp;
 
 /* macros used for getting information about the block */
 #define HDRP(bp) (bp - 1)
-#define FTRP(bp) (bp + (HDRP(bp)->size - OVERHEAD)/DSIZE)
+#define FTRP(bp) (bp + (GET_SIZE(HDRP(bp)-> size) - OVERHEAD)/DSIZE) //needs corrections !!!!!!!
 #define EPILOG(bp) (FTRP(bp)+1)
 #define PREV_FTRP(bp) (bp - 2)
 #define NEXT_HDRP(bp)(FTRP(bp) + 1)
@@ -247,14 +247,45 @@ static void *extend_heap(size_t words) //words already includes
 
 static void *coalesce(t_block bp)
 {
-    //bp points to the Header
-    //bp - 1 == footer of previous block !!!
+	//bp points to the Header
+	//bp - 1 == footer of previous block !!!
 
-    size_t prev_alloc = GET_ALLOC(PREV_FTRP(bp)->size);
-    size_t next_alloc =   GET_ALLOC(NEXT_HDRP(bp)->size);
-    size_t size = bp->size;
+	size_t prev_alloc = GET_ALLOC(PREV_FTRP(bp)->size);
+	size_t next_alloc =   GET_ALLOC(NEXT_HDRP(bp)->size);
+	size_t size = bp->size;
+
+	//Case 1: Nothing to coalesce
+	if (prev_alloc && next_alloc) {
+		return bp;
+	}
+
+    // Case 2: Coalesce with next block
+	// remember USED == 1
+    else if (prev_alloc) {
+        t_block next = NEXT_HDRP(bp);
+
+        // Will nee to be removed from free list
+        // Maintain free lists
+        // delete_from_free_list(block);
+        // delete_from_free_list(next);
+
+        // Update header of BLOCK so that size stretches to encompass NEXT
+        size += next->size;
+        PUT(HEADER(block), PACK(size,FREE,IS_PREV_ALLOC(block)));
+        PUT(FOOTER(next), PACK(size,FREE,IS_PREV_ALLOC(block)));
+
+        push_free_list(block);
+        return bp;
+    }
 
 
 
-    return NULL;
+
+
+
+
+
+
+
+	return NULL;
 }
