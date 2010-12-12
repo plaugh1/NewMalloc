@@ -52,6 +52,9 @@ static struct s_block *heap_listp;
 #define GET_SIZE(s)  (s & ~0x7)
 #define GET_ALLOC(s) (s & 0x1)
 
+/* Used for reading and writing data */
+inline size_t GET(void *p) { return  * (size_t*)p; }
+inline void PUT( void *p, size_t val) { *(size_t *)p = val; }
 
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
@@ -89,8 +92,6 @@ int mm_init(void)
      prolog_header->size = PACK(0,USED);
 
      prolog_footer->size = PACK(0,USED);
-
-
 
 
      epilog->size = PACK(0,USED);
@@ -146,9 +147,17 @@ void *mm_malloc(size_t size)
 
 
 }
-
+/**
+ * mm_free - this simply clears the header and footer of the passed
+ *      block, and then coalesces.
+ */)
 void mm_free(void *ptr)
 {
+    size_t size = GET_SIZE(ptr->size)
+
+    PUT(HDRP(ptr), PACK(size, FREE));
+    PUT(FTRP(ptr), PACK(size, FREE));
+    coalesce(ptr);
 }
 
 void *mm_realloc(void *ptr, size_t size)
@@ -232,7 +241,7 @@ static void *extend_heap(size_t words) //words already includes
     printtag(epilog);
 
     /* Coalesce if the previous block was free */
-    t_block test = coalesce(start);
+    coalesce(start);
     return NULL;
 }
 
