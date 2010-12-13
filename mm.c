@@ -254,28 +254,59 @@ static void *coalesce(t_block bp)
 	size_t next_alloc =   GET_ALLOC(NEXT_HDRP(bp)->size);
 	size_t size = bp->size;
 
-	//Case 1: Nothing to coalesce
+	// nothing to coalesce
 	if (prev_alloc && next_alloc) {
 		return bp;
 	}
 
-    // Case 2: Coalesce with next block
-	// remember USED == 1
+    // coalesce with the next block
     else if (prev_alloc) {
         t_block next = NEXT_HDRP(bp);
 
-        // Will nee to be removed from free list
-        // Maintain free lists
-        // delete_from_free_list(block);
-        // delete_from_free_list(next);
+        // clear them from the free lists, so we can
+        // coalesce them together
+        delete_from_free_list(bp);
+        delete_from_free_list(next);
 
         // Update header of BLOCK so that size stretches to encompass NEXT
         size += next->size;
-        PUT(HEADER(block), PACK(size,FREE,IS_PREV_ALLOC(block)));
-        PUT(FOOTER(next), PACK(size,FREE,IS_PREV_ALLOC(block)));
+        PUT(HEADER(bp), PACK(size,FREE,IS_PREV_ALLOC(bp)));
+        PUT(FOOTER(next), PACK(size,FREE,IS_PREV_ALLOC(bp)));
 
-        push_free_list(block);
+        push_free_list(bp);
         return bp;
+    // coalesce with the previous block
+    } else if (next_alloc) {
+        t_block prev = PREV_HDRP(bp);
+        
+        // clear them from the free lists, so we can
+        // coalesce them together
+        delete_from_free_list(bp);
+        delete_from_free_list(prev);
+        
+        size += prev->size;
+        PUT(HEADER(prev), PACK(size, FREE));
+        PUT(FOOTER(bp), PACK(size, FREE));
+        
+        // add the entire block to the free list
+        push_free_list(prev);
+        return prev;
+    // coalesce with both the prev and next
+    } else {
+        t_block prev = PREV_HDRP(bp),
+                next = NEXT_HDRP(bp);
+                
+        delete_from_free_list(bp);
+        delete_from_free_list(next);
+        delete_from_free_list(prev);
+        
+        size += next->size + prev->size;
+        PUT(HEADER(prev), PACK(size, FREE));
+        PUT(FOOTER(next), PACK(size, FREE));
+        
+        // add the entire block to the free list
+        push_free_list(prev);
+        return prev;
     }
 
 

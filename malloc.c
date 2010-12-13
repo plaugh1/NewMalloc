@@ -84,7 +84,7 @@ int mm_init(void)
 
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE/WSIZE) == NULL)
-	return -1;
+        return -1;
     return 0;
 }
 /* $end mminit */
@@ -101,24 +101,24 @@ void *mm_malloc(size_t size)
 
     /* Ignore spurious requests */
     if (size <= 0)
-	return NULL;
+        return NULL;
 
     /* Adjust block size to include overhead and alignment reqs. */
     if (size <= DSIZE)
-	asize = DSIZE + OVERHEAD;
+        asize = DSIZE + OVERHEAD;
     else
-	asize = DSIZE * ((size + (OVERHEAD) + (DSIZE-1)) / DSIZE);
+        asize = DSIZE * ((size + (OVERHEAD) + (DSIZE-1)) / DSIZE);
     
     /* Search the free list for a fit */
     if ((bp = find_fit(asize)) != NULL) {
-	place(bp, asize);
-	return bp;
+        place(bp, asize);
+        return bp;
     }
 
     /* No fit found. Get more memory and place the block */
     extendsize = MAX(asize,CHUNKSIZE);
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
-	return NULL;
+        return NULL;
     place(bp, asize);
     return bp;
 } 
