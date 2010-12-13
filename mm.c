@@ -47,7 +47,7 @@ team_t team = {
 #define WSIZE       4       /* word size (bytes) */  
 #define DSIZE       8       /* doubleword size (bytes) */
 #define CHUNKSIZE  (1<<6)  /* initial heap size (bytes) */
-#define OVERHEAD    8       /* overhead of header and footer (bytes) */
+#define OVERHEAD    16       /* overhead of header and footer (bytes) */
 
 inline size_t MAX(size_t x, size_t y) { return x > y ? x : y; }
 
@@ -63,13 +63,17 @@ inline void PUT( void *p, size_t val) { *(size_t *)p = val; }
 #define GET_ALLOC(p) (GET(p) & 0x1)
 
 /* Given block ptr bp, compute address of its header and footer */
-#define HDRP(bp)       ((char *)(bp) - WSIZE)  
-#define FTRP(bp)       ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
+#define HDRP(bp)       ((char *)(bp) - DSIZE)  
+#define FTRP(bp)       ((char *)(bp) + GET_SIZE(HDRP(bp)) + WSIZE)
 
 /* Given block ptr bp, compute address of next and previous blocks */
-#define NEXT_BLKP(bp)  ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
-#define PREV_BLKP(bp)  ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
+#define NEXT_BLKP(bp)  ((char *)(bp) + GET_SIZE(((char *)(bp) + DSIZE)))
+#define PREV_BLKP(bp)  ((char *)(bp) - DSIZE - WSIZE)))
 /* $end mallocmacros */
+
+/* Given a block ptr bp, get the next/prev free block */
+#define NEXT_FREE_BLK(bp)   ((char *)(bp) - WSIZE)
+#define PREV_FREE_BLK(bp)   ((char *)(FTRP(bp) - WSIZE))
 
 /* The only global variable is a pointer to the first block */
 static char *heap_listp;   
@@ -94,7 +98,8 @@ int mm_init(void)
     if ((heap_listp = mem_sbrk(4*WSIZE)) == NULL)
         return -1;
     PUT(heap_listp, 0);                        /* alignment padding */
-    PUT(heap_listp+WSIZE, PACK(OVERHEAD, 1));  /* prologue header */ 
+    PUT(heap_listp+WSIZE, PACK(OVERHEAD, 1));  /* header */
+    PUT(heap_listp+)    
     PUT(heap_listp+DSIZE, PACK(OVERHEAD, 1));  /* prologue footer */ 
     PUT(heap_listp+WSIZE+DSIZE, PACK(0, 1));   /* epilogue header */
     heap_listp += DSIZE;
@@ -279,10 +284,13 @@ static void *coalesce(void *bp)
 
     // if the next block is not allocated
     else if (prev_alloc && !next_alloc) {      /* Case 2 */
+      
+        void *next = HDRP(NEXT_BLKP(bp));
     
         // take it out of the free list, so we can merge
-        remove_from_free_list(HDRP(NEXT_BLKP(bp)));
-        size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
+        remove_from_free_list(next);
+        
+        size += GET_SIZE(next);
         PUT(HDRP(bp), PACK(size, 0));
         PUT(FTRP(bp), PACK(size,0));
         
@@ -353,7 +361,20 @@ static void checkblock(void *bp)
 	printf("Error: header does not match footer\n");
 }
 
+/*
+ * Removes this block from the free list.
+ * Assume we're being passed a header.
+ */
 static void remove_from_free_list(void *bp)
+{
+
+}
+
+/*
+ * Adds this block from the free list.
+ * Assume we're being passed a header.
+ */
+static void add_to_free_list(void *bp)
 {
 
 }
