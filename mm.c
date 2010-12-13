@@ -46,10 +46,10 @@ team_t team = {
 /* Basic constants and macros */
 #define WSIZE       4       /* word size (bytes) */  
 #define DSIZE       8       /* doubleword size (bytes) */
-#define CHUNKSIZE  (1<<12)  /* initial heap size (bytes) */
+#define CHUNKSIZE  (1<<6)  /* initial heap size (bytes) */
 #define OVERHEAD    8       /* overhead of header and footer (bytes) */
 
-inline size_t MAX(size_t x, size_t y) { return a > b ? a : b; }
+inline size_t MAX(size_t x, size_t y) { return x > y ? x : y; }
 
 /* Pack a size and allocated bit into a word */
 #define PACK(size, alloc)  ((size) | (alloc))
@@ -81,6 +81,8 @@ static void *find_fit(size_t asize);
 static void *coalesce(void *bp);
 static void printblock(void *bp); 
 static void checkblock(void *bp);
+static void remove_from_free_list(void *bp);
+static void add_to_free_list(void *bp);
 
 /* 
  * mm_init - Initialize the memory manager 
@@ -90,7 +92,7 @@ int mm_init(void)
 {
     /* create the initial empty heap */
     if ((heap_listp = mem_sbrk(4*WSIZE)) == NULL)
-	return -1;
+        return -1;
     PUT(heap_listp, 0);                        /* alignment padding */
     PUT(heap_listp+WSIZE, PACK(OVERHEAD, 1));  /* prologue header */ 
     PUT(heap_listp+DSIZE, PACK(OVERHEAD, 1));  /* prologue footer */ 
@@ -168,22 +170,22 @@ void mm_checkheap(int verbose)
     char *bp = heap_listp;
 
     if (verbose)
-	printf("Heap (%p):\n", heap_listp);
+        printf("Heap (%p):\n", heap_listp);
 
     if ((GET_SIZE(HDRP(heap_listp)) != DSIZE) || !GET_ALLOC(HDRP(heap_listp)))
-	printf("Bad prologue header\n");
+        printf("Bad prologue header\n");
     checkblock(heap_listp);
 
     for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-	if (verbose) 
-	    printblock(bp);
-	checkblock(bp);
+        if (verbose) 
+            printblock(bp);
+        checkblock(bp);
     }
      
     if (verbose)
-	printblock(bp);
+        printblock(bp);
     if ((GET_SIZE(HDRP(bp)) != 0) || !(GET_ALLOC(HDRP(bp))))
-	printf("Bad epilogue header\n");
+        printf("Bad epilogue header\n");
 }
 
 /* The remaining routines are internal helper routines */
@@ -200,7 +202,7 @@ static void *extend_heap(size_t words)
     /* Allocate an even number of words to maintain alignment */
     size = (words % 2) ? (words+1) * WSIZE : words * WSIZE;
     if ((int)(bp = mem_sbrk(size)) == -1) 
-	return NULL;
+        return NULL;
 
     /* Initialize free block header/footer and the epilogue header */
     PUT(HDRP(bp), PACK(size, 0));         /* free block header */
@@ -224,15 +226,18 @@ static void place(void *bp, size_t asize)
     size_t csize = GET_SIZE(HDRP(bp));   
 
     if ((csize - asize) >= (DSIZE + OVERHEAD)) { 
-	PUT(HDRP(bp), PACK(asize, 1));
-	PUT(FTRP(bp), PACK(asize, 1));
-	bp = NEXT_BLKP(bp);
-	PUT(HDRP(bp), PACK(csize-asize, 0));
-	PUT(FTRP(bp), PACK(csize-asize, 0));
+        PUT(HDRP(bp), PACK(asize, 1));
+        PUT(FTRP(bp), PACK(asize, 1));
+        bp = NEXT_BLKP(bp);
+        PUT(HDRP(bp), PACK(csize-asize, 0));
+        PUT(FTRP(bp), PACK(csize-asize, 0));
+        
+        // remove the block from the free list
+        remove_from_free_list(bp);
     }
     else { 
-	PUT(HDRP(bp), PACK(csize, 1));
-	PUT(FTRP(bp), PACK(csize, 1));
+        PUT(HDRP(bp), PACK(csize, 1));
+        PUT(FTRP(bp), PACK(csize, 1));
     }
 }
 /* $end mmplace */
@@ -249,9 +254,9 @@ static void *find_fit(size_t asize)
 
     /* first fit search */
     for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
-	if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
-	    return bp;
-	}
+        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+            return bp;
+        }
     }
     return NULL; /* no fit */
 }
@@ -267,30 +272,56 @@ static void *coalesce(void *bp)
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size = GET_SIZE(HDRP(bp));
 
-    if (prev_alloc && next_alloc) {            /* Case 1 */
-	return bp;
+    // if both are allocated, we're done
+    if (prev_alloc && next_alloc) {            
+        return bp;
     }
 
+    // if the next block is not allocated
     else if (prev_alloc && !next_alloc) {      /* Case 2 */
-	size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
-	PUT(HDRP(bp), PACK(size, 0));
-	PUT(FTRP(bp), PACK(size,0));
-	return(bp);
+    
+        // take it out of the free list, so we can merge
+        remove_from_free_list(HDRP(NEXT_BLKP(bp)));
+        size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
+        PUT(HDRP(bp), PACK(size, 0));
+        PUT(FTRP(bp), PACK(size,0));
+        
+        add_to_free_list(bp);
+        return(bp);
     }
 
+    // if the previous block is not allocated
     else if (!prev_alloc && next_alloc) {      /* Case 3 */
-	size += GET_SIZE(HDRP(PREV_BLKP(bp)));
-	PUT(FTRP(bp), PACK(size, 0));
-	PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-	return(PREV_BLKP(bp));
+        
+        void *prev = HDRP(PREV_BLKP(bp));
+        
+        remove_from_free_list(prev);
+    
+        size += GET_SIZE(HDRP(PREV_BLKP(bp)));
+        PUT(FTRP(bp), PACK(size, 0));
+        PUT(prev, PACK(size, 0));
+        
+        add_to_free_list(prev)
+        
+        return(PREV_BLKP(bp));
     }
 
+    // if both next and previous are not allocated
     else {                                     /* Case 4 */
-	size += GET_SIZE(HDRP(PREV_BLKP(bp))) + 
-	    GET_SIZE(FTRP(NEXT_BLKP(bp)));
-	PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-	PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
-	return(PREV_BLKP(bp));
+    
+        void *prev = HDRP(PREV_BLKP(bp)),
+             *next = HDRP(NEXT_BLKP(bp));
+             
+        remove_from_free_list(prev);
+        remove_from_free_list(next);
+        
+        size += GET_SIZE(prev) + GET_SIZE(next);
+        PUT(prev, PACK(size, 0));
+        PUT(next, PACK(size, 0));
+        
+        add_to_free_list(prev);
+        
+        return(PREV_BLKP(bp));
     }
 }
 /* $end mmfree */
@@ -320,4 +351,9 @@ static void checkblock(void *bp)
 	printf("Error: %p is not doubleword aligned\n", bp);
     if (GET(HDRP(bp)) != GET(FTRP(bp)))
 	printf("Error: header does not match footer\n");
+}
+
+static void remove_from_free_list(void *bp)
+{
+
 }
