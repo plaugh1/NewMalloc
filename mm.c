@@ -50,14 +50,14 @@ team_t team = {
 #define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~0x7)
 /* seg fit */
 #define SUCC(bp) ((void *)GET(bp))  /* block successor */
-#define CONTAINERS 14
+#define CONTAINERS 12
 #define CONTAINER_SIZE (ALIGN((CONTAINERS * (sizeof(void *)))))
 /* $end mallocmacros */
 
 /* global variables */
 static char *heap_listp; /*pointer to first block */
-void *glbptr;
-void **container;
+static void *global;
+static void **container;
 
 /* function prototypes for internal helper routines */
 static void *extend_heap(size_t words);
@@ -107,7 +107,7 @@ int mm_init(void)
     PUT(heap_listp+WSIZE+DSIZE, PACK(0, 1));   /* epilogue header */
     
     heap_listp += DSIZE;
-    glbptr = heap_listp;
+    global = heap_listp;
     
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
     if (extend_heap(CHUNKSIZE/WSIZE) == NULL)
@@ -150,7 +150,6 @@ void remove_from_free_list(void *bp)
  */
 void *mm_malloc(size_t size)
 {
-    fflush(stdout);
     size_t asize;      /* adjusted block size */
     size_t extendsize; /* amount to extend heap if no fit */
     
