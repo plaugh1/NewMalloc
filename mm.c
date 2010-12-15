@@ -14,15 +14,15 @@
  ********************************************************/
 team_t team = {
     /* Team name */
-    "xx+xx",
+    "dorman1+plaugh1",
     /* First member's full name */
-    "xx",
+    "Alexander Dorfman",
     /* First member's email address */
-    "xx",
+    "dorfman1@umbc.edu",
     /* Second member's full name (leave blank if none) */
-    "xx",
+    "Pat Laughlin",
     /* Second member's email address (leave blank if none) */
-    "xx"
+    "plaugh1@umbc.edu"
 };
 
 struct s_block {
@@ -34,9 +34,6 @@ typedef struct s_block *t_block;
 
 static struct s_block *heap_listp;
 
-
-
-
 /* single word (4) or double word (8) alignment */
 #define WSIZE 4
 #define DSIZE 8
@@ -45,14 +42,12 @@ static struct s_block *heap_listp;
 #define FREE 0
 #define USED 1
 
-
 #define HDRP(bp) (bp - 1) //Correct
 #define FTRP(bp) (bp + ((GET_SIZE(HDRP(bp)->size) - OVERHEAD) / DSIZE)) //Correct
 #define EPILOG(bp) (FTRP(bp)+1) //Correct
 
 #define PREV_BLOCK(bp) (bp - (GET_SIZE(PREV_FTRP(bp)->size) / DSIZE)) //Correct
 #define NEXT_BLOCK(bp) (bp + (GET_SIZE(HDRP(bp)->size) / DSIZE)) //bp + SIZE/DSIZE
-
 
 #define PREV_HDRP(bp) (HDRP(PREV_BLOCK(bp))) //Correct
 #define PREV_FTRP(bp) (bp - 2)  //Correct
@@ -86,7 +81,6 @@ static void *extend_heap(size_t words);
 static void printblock(t_block bp);
 static void printtag(t_block bp);
 static void *coalesce(t_block bp);
-
 
 int mm_init(void)
 {
@@ -165,6 +159,7 @@ void *mm_malloc(size_t size)
 }
 void mm_free(void *ptr)
 {
+
 }
 
 void *mm_realloc(void *ptr, size_t size)
