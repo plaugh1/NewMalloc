@@ -45,6 +45,7 @@ static struct s_block *free_list_root;
 #define FREE 0
 #define USED 1
 #define MIN_SIZE 24 //Header + Footer + Min payload of 8 bytes
+#define CHUNKSIZE 1<<8
 
 
 #define HDRP(bp) (bp - 1) //Correct
@@ -87,7 +88,7 @@ static void delete_from_free_list(t_block bp);
 static void push_free_list(t_block ptr);
 static void *split_block(t_block ptr,size_t carve_size);
 static void *find_fit(size_t asize);
-static void place(void *bp, size_t asize)
+static void place(void *bp, size_t asize);
 
 int mm_init(void)
 {
@@ -138,7 +139,7 @@ int mm_init(void)
 void *mm_malloc(size_t size)
 {
 	size = 11;
-	size_t asize;      /* adjusted block size */
+	size_t asize, extendsize;      /* adjusted block size */
 	char *bp;
 	char *bp2;
 
@@ -180,8 +181,8 @@ void mm_free(void *bp)
 {
     size_t size = GET_SIZE(HDRP(bp));
 
-    HDRP(bp)->size = PACK(size, FREE));
-    FTRP(bp)->size = PACK(size, FREE));
+    HDRP(bp)->size = PACK(size, FREE);
+    FTRP(bp)->size = PACK(size, FREE);
     coalesce(bp);
 }
 
@@ -291,8 +292,6 @@ static void *coalesce(t_block bp)
 	//Case 1: Nothing to coalesce
 	if (prev_alloc && next_alloc) {
 		return bp;
-
-		//should we push it onto free list ???
 	}
 
     // Case 2: Coalesce with next block
@@ -324,7 +323,7 @@ static void *coalesce(t_block bp)
 
         // Maintain free lists
         delete_from_free_list(bp);
-        delete_from_free_list(prev);
+        delete_from_free_list(prev_HD);
 
         // Update the size in Header of Previous block, to encompass the size of current block
         prev_size += curr_size;
@@ -333,7 +332,7 @@ static void *coalesce(t_block bp)
        // Update Footer of current block
         FTRP(bp)->size = PACK(prev_size,FREE); //Corrected
         
-        push_free_list(prev);
+        push_free_list(prev_HD);
         
         return(PREV_PAYLOAD(bp)); //Return pointer to Payload of previos block
     }
@@ -347,16 +346,16 @@ static void *coalesce(t_block bp)
     	size_t next_size = GET_SIZE(next_FT->size);
 
         // Maintain free lists
-        //delete_from_free_list(prev_HD);
-        //delete_from_free_list(next_FT);
-        //delete_from_free_list();
+        delete_from_free_list(prev_HD);
+        delete_from_free_list(next_FT);
+        delete_from_free_list(bp);
 
         // Update size in Header of prev block
     	// and Footer of Next to encompass the sizes of current + prev + next blocks
     	prev_HD->size = PACK(prev_size + curr_size + next_size,FREE);
     	next_FT->size = PACK(prev_size + curr_size + next_size,FREE);
 
-    	//push_free_list();
+    	push_free_list(prev_HD);
 
     	return(PREV_PAYLOAD(bp)); //Return pointer to Payload of previos block
     }
