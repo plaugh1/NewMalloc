@@ -156,13 +156,7 @@ void *mm_malloc(size_t size)
 
     //if ((bp = extend_heap(asize)) == NULL)
     	//return NULL;
-    bp = extend_heap(asize);
-    bp2 = extend_heap(asize);
 
-
-    //bp2 = extend_heap(asize);
-
-    /*
     // Search the free list for a fit
     if ((bp = find_fit(asize)) != NULL) {
     	place(bp, asize);
@@ -175,15 +169,18 @@ void *mm_malloc(size_t size)
     	return NULL;
     place(bp, asize);
     return bp;
-    */
 
 	return 0;
 
 }
-void mm_free(void *ptr)
+
+void mm_free(void *bp)
 {
-	//push_free_list(ptr);
-	//coalesce(ptr);
+    size_t size = GET_SIZE(HDRP(bp));
+
+    HDRP(bp)->size = PACK(size, FREE));
+    FTRP(bp)->size = PACK(size, FREE));
+    coalesce(bp);
 }
 
 void *mm_realloc(void *ptr, size_t size)
@@ -210,8 +207,6 @@ static void printblock(t_block bp)
 
     header_ptr = HDRP(bp);
     footer_ptr = FTRP(bp);
-
-
 
     head_size = GET_SIZE(header_ptr->size);
     head_alloc = GET_ALLOC(header_ptr->size);
@@ -284,7 +279,7 @@ static void *coalesce(t_block bp)
 	size_t prev_alloc = GET_ALLOC(PREV_FTRP(bp)->size);
 	size_t next_alloc = GET_ALLOC(NEXT_HDRP(bp)->size);
 	size_t curr_size  = GET_SIZE(HDRP(bp)->size);
-	printf("\nCoalesce\n");
+
 	printtag(PREV_FTRP(bp));
 	printtag(NEXT_HDRP(bp));
 
@@ -307,15 +302,15 @@ static void *coalesce(t_block bp)
 
         // Will need to be removed from free list
         // Maintain free lists
-        //delete_from_free_list(next_FT);
-        //delete_from_free_list(bp);
+        delete_from_free_list(next_FT);
+        delete_from_free_list(bp);
 
         // Update the size in Header of Current block, to encompass Next Block size
         curr_size += GET_SIZE(next_FT->size);
         HDRP(bp)->size = PACK(curr_size,FREE); //Corrected
         // Update the size in Footer of Adjacent next block,
         next_FT->size = PACK(curr_size,FREE);
-        //push_free_list();
+        push_free_list(bp);
 
         return(bp);
     }
@@ -326,8 +321,8 @@ static void *coalesce(t_block bp)
         size_t prev_size = GET_SIZE(prev_HD->size);
 
         // Maintain free lists
-        //delete_from_free_list(block);
-        //delete_from_free_list(prev);
+        delete_from_free_list(bp);
+        delete_from_free_list(prev);
 
         // Update the size in Header of Previous block, to encompass the size of current block
         prev_size += curr_size;
@@ -335,7 +330,9 @@ static void *coalesce(t_block bp)
 
        // Update Footer of current block
         FTRP(bp)->size = PACK(prev_size,FREE); //Corrected
-        //push_free_list();
+        
+        push_free_list(prev);
+        
         return(PREV_PAYLOAD(bp)); //Return pointer to Payload of previos block
     }
 
@@ -411,7 +408,7 @@ void delete_from_free_list(t_block current_hdrp)
 static void push_free_list(t_block payload)
 {
 	// Check if Root is empty
-	if(free_list_root == NULL) {
+	if (free_list_root == NULL) {
 		// Create first block in free list
 		HDRP(payload)->ptr = NULL;
 		FTRP(payload)->ptr = NULL;
@@ -452,9 +449,48 @@ void *split_block(t_block ptr,size_t carve_size)
 
 		// Push it onto the free list
 		new_block->size = PACK(new_size,FREE);
-		push_free_list(new_block)
-		}
+		push_free_list(new_block);
+	}
+    
 	// If block can't accommodate MIN_SIZE block after split
 	// return original pointer
 	return ptr;
+}
+
+static void place(void *bp, size_t asize)
+/* $end mmplace-proto */
+{
+    size_t csize = GET_SIZE(HDRP(bp));   
+
+    if ((csize - asize) >= (DSIZE + OVERHEAD)) { 
+        PUT(HDRP(bp), PACK(asize, USED));
+        PUT(FTRP(bp), PACK(asize, USED));
+        bp = NEXT_BLKP(bp);
+        HDRP(bp)->size = PACK(csize-asize, FREE));
+        FTRP(bp)->size = PACK(csize-asize, FREE));
+    }
+    else { 
+        PUT(HDRP(bp), PACK(csize, 1));
+        PUT(FTRP(bp), PACK(csize, 1));
+    }
+}
+/* $end mmplace */
+
+/* 
+ * find_fit - Find a fit for a block with asize bytes 
+ */
+/* $begin mmfirstfit */
+/* $begin mmfirstfit-proto */
+static void *find_fit(size_t asize)
+/* $end mmfirstfit-proto */
+{
+    void *bp;
+
+    /* first fit search */
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+            return bp;
+        }
+    }
+    return NULL; /* no fit */
 }
