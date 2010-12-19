@@ -86,6 +86,8 @@ static void *coalesce(t_block bp);
 static void delete_from_free_list(t_block bp);
 static void push_free_list(t_block ptr);
 static void *split_block(t_block ptr,size_t carve_size);
+static void *find_fit(size_t asize);
+static void place(void *bp, size_t asize)
 
 int mm_init(void)
 {
@@ -463,15 +465,15 @@ static void place(void *bp, size_t asize)
     size_t csize = GET_SIZE(HDRP(bp));   
 
     if ((csize - asize) >= (DSIZE + OVERHEAD)) { 
-        PUT(HDRP(bp), PACK(asize, USED));
-        PUT(FTRP(bp), PACK(asize, USED));
+        HDRP(bp)->size = PACK(asize, USED);
+        FTRP(bp)->size = PACK(asize, USED);
         bp = NEXT_BLKP(bp);
-        HDRP(bp)->size = PACK(csize-asize, FREE));
-        FTRP(bp)->size = PACK(csize-asize, FREE));
+        HDRP(bp)->size = PACK(csize-asize, FREE);
+        FTRP(bp)->size = PACK(csize-asize, FREE);
     }
     else { 
-        PUT(HDRP(bp), PACK(csize, 1));
-        PUT(FTRP(bp), PACK(csize, 1));
+        HDRP(bp)->size = PACK(csize, USED);
+        FTRP(bp)->size = PACK(csize, USED);
     }
 }
 /* $end mmplace */
