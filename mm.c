@@ -25,14 +25,17 @@ team_t team = {
     "plaugh1@umbc.edu"
 };
 
+typedef struct s_block *t_block;
+
 struct s_block {
 	size_t size; //Contains size & allocation bit
 	struct s_block *ptr; //Pointer to Next/Prev
 };
 
-typedef struct s_block *t_block;
-
+// Pointer to the start of the heap
 static struct s_block *heap_listp;
+// Pointer to the root of the free list
+static struct s_block *free_list_root;
 
 /* single word (4) or double word (8) alignment */
 #define WSIZE 4
@@ -41,6 +44,8 @@ static struct s_block *heap_listp;
 #define OVERHEAD 16
 #define FREE 0
 #define USED 1
+#define MIN_SIZE 24 //Header + Footer + Min payload of 8 bytes
+
 
 #define HDRP(bp) (bp - 1) //Correct
 #define FTRP(bp) (bp + ((GET_SIZE(HDRP(bp)->size) - OVERHEAD) / DSIZE)) //Correct
@@ -49,19 +54,18 @@ static struct s_block *heap_listp;
 #define PREV_BLOCK(bp) (bp - (GET_SIZE(PREV_FTRP(bp)->size) / DSIZE)) //Correct
 #define NEXT_BLOCK(bp) (bp + (GET_SIZE(HDRP(bp)->size) / DSIZE)) //bp + SIZE/DSIZE
 
+
 #define PREV_HDRP(bp) (HDRP(PREV_BLOCK(bp))) //Correct
 #define PREV_FTRP(bp) (bp - 2)  //Correct
 
 #define NEXT_HDRP(bp) (HDRP(NEXT_BLOCK(bp))) //Correct
 #define NEXT_FTRP(bp) (FTRP(NEXT_BLOCK(bp))) //Correct
 
-
-
-
-
+#define FTRP_from_HDRP(hdrp) (hdrp + (GET_SIZE(hdrp->size)/DSIZE) - 1) //Header + size - Footer_Size(1)
+#define PREV_PAYLOAD(bp) (PREV_HDRP(bp) + 1)
+#define NEXT_PAYLOAD(bp) (NEXT_HDRP(bp) + 1)
 
 // Read the size and allocated fields from address p
-
 #define GET_SIZE(s)  (s & ~0x7)
 #define GET_ALLOC(s) (s & 0x1)
 
@@ -72,8 +76,6 @@ static struct s_block *heap_listp;
 #define PACK(size, alloc)  ((size) | (alloc))
 /* Given block ptr bp, compute address of its header and footer */
 
-
-
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
 // function prototypes for internal helper routines
@@ -81,38 +83,49 @@ static void *extend_heap(size_t words);
 static void printblock(t_block bp);
 static void printtag(t_block bp);
 static void *coalesce(t_block bp);
+static void delete_from_free_list(t_block bp);
+static void push_free_list(t_block ptr);
+static void *split_block(t_block ptr,size_t carve_size);
 
 int mm_init(void)
 {
-
+	//Three pointers
 	t_block prolog_header, prolog_footer, epilog;
 
 	//printf("sizeof struct:%d\n",sizeof(struct s_block));
 
-	//try to allocated 3* Struct(8bytes) = 24 bytes
+	// Allocated 3* Struct(8bytes) = 24 bytes
+	// If Allocation fails, return -1
 	if ((heap_listp = mem_sbrk(3*sizeof(struct s_block))) == NULL)
 		return -1;
 
+	// Initialize Prolog header
+	prolog_header = heap_listp;
+	// Initialize Prolog footer & Epilog
+	prolog_footer = heap_listp + 1;
+	epilog = heap_listp + 2;
+	// Set Prolog footer and Epilog  size & use == 0 & USED
+	// This will help with coalescing
+	prolog_header->size = PACK(0,USED);
+	prolog_footer->size = PACK(0,USED);
+	epilog->size = PACK(0,USED);
+	// Just in case, set Footer & Header pointers = NULL
+	// Removes this block from free list
+	prolog_header->ptr = NULL;
+	prolog_footer->ptr = NULL;
 
-	 prolog_header = heap_listp;
-	 prolog_header->size = PACK(0,USED);
+	//Initializes Free List root
+	free_list_root = NULL;
+	printf("\n\nInitial\n");
+	printtag(prolog_header);
+	printtag(prolog_footer);
+	printtag(epilog);
 
-	 prolog_footer = heap_listp + 1;
-	 epilog = heap_listp + 2;
+	//Move the heap_listp in Between
+	heap_listp += 1;
 
-	 prolog_header->size = PACK(0,USED);
-
-	 prolog_footer->size = PACK(0,USED);
-
-
-
-	 epilog->size = PACK(0,USED);
-	 printtag(epilog);
-
-	 heap_listp += 1;
-
-	 //printblock(heap_listp);
-	 return 0;
+	//printblock(heap_listp);
+	return 0;
 
 }
 
@@ -125,19 +138,29 @@ void *mm_malloc(size_t size)
 	size = 11;
 	size_t asize;      /* adjusted block size */
 	char *bp;
+	char *bp2;
 
     // Ignore spurious requests
     if (size <= 0)
     	return NULL;
     // Adjust block size to include overhead and alignment reqs.
+    // If requested size is less than Min size of
     if (size <= DSIZE)
     	asize = DSIZE + OVERHEAD;
+    //Size is above Min of 8 bytes, adjust to nearest multiple of 8 bytes
     else
     	asize = DSIZE * ((size + (OVERHEAD) + (DSIZE-1)) / DSIZE);
 
-    if ((bp = extend_heap(asize)) == NULL)
-    	return NULL;
+    //Extend the heap by adjusted size
+    //If fail to extend, return 0
 
+    //if ((bp = extend_heap(asize)) == NULL)
+    	//return NULL;
+    bp = extend_heap(asize);
+    bp2 = extend_heap(asize);
+
+
+    //bp2 = extend_heap(asize);
 
     /*
     // Search the free list for a fit
@@ -159,7 +182,8 @@ void *mm_malloc(size_t size)
 }
 void mm_free(void *ptr)
 {
-
+	//push_free_list(ptr);
+	//coalesce(ptr);
 }
 
 void *mm_realloc(void *ptr, size_t size)
@@ -216,75 +240,84 @@ static void printtag(t_block bp)
     	return;
     }
 
-    printf("\n%p: header: [%d:%c]", bp,
+    printf("\n%p: Size & Use: [%d:%c]", bp,
     		head_size, (head_alloc ? 'a' : 'f'));
 }
 
 static void *extend_heap(size_t words) //words already includes
 {
-
-    t_block header,footer,epilog, start;
+    t_block header, footer, epilog, payload;
 
     // Allocate an even number of words to maintain alignment
-    if ((int)(start = mem_sbrk(words)) == -1)
+    if ((int)(payload = mem_sbrk(words)) == -1)
     	return NULL;
     //overwrite previous epilog with new header
-    header = HDRP(start);
+    header = HDRP(payload);
     header->size = PACK(words,FREE);
-    printtag(header);
+    //printtag(header);
+
     //calculate new footer
     //and set the same way as footer
-    footer = FTRP(start);
+    footer = FTRP(payload);
     *footer = *header;
-    printtag(footer);
+    //printtag(footer);
     //calculate new epilog
-    epilog = EPILOG(start);
+    epilog = EPILOG(payload);
     epilog->size = PACK(0,USED);
+    printf("\n\nExtend\n");
+    printtag(header);
+    printtag(footer);
     printtag(epilog);
 
-    /* Coalesce if the previous block was free */
-    //start+1 == to start from payload, rather than footer
-    t_block test = coalesce(start+1);
+    // Before returning, coalesce.
+    t_block test = coalesce(payload);
+    printf("%p Test\n",test);
     return NULL;
 }
 
+//bp points to the Payload
 static void *coalesce(t_block bp)
 {
-	//bp points to the Header
-	//bp - 1 == footer of previous block !!!
-
-	//get allocation of the Prev block
-	size_t prev_alloc = GET_ALLOC(PREV_FTRP(bp)->size);
-	//get allocation of the Next block
-	size_t next_alloc =   GET_ALLOC(NEXT_HDRP(bp)->size);
+	//get Usage status of the Prev block
+	//get Usage status of the Next block
 	//get size of the current block
-	size_t curr_size = GET_SIZE(bp->size);
+	size_t prev_alloc = GET_ALLOC(PREV_FTRP(bp)->size);
+	size_t next_alloc = GET_ALLOC(NEXT_HDRP(bp)->size);
+	size_t curr_size  = GET_SIZE(HDRP(bp)->size);
+	printf("\nCoalesce\n");
+	printtag(PREV_FTRP(bp));
+	printtag(NEXT_HDRP(bp));
+
+	//t_block current_HDRP = HDRP(bp); // Added pointer to header of current block
+
 
 	//Case 1: Nothing to coalesce
 	if (prev_alloc && next_alloc) {
 		return bp;
+
+		//should we push it onto free list ???
 	}
 
     // Case 2: Coalesce with next block
-	// remember USED == 1
+	// USED == 1
+	// so, if prev is USED, coalesce with next block
     else if (prev_alloc) {
-    	//pointer to the next Footer
+    	// pointer to the next Footer
         t_block next_FT = NEXT_FTRP(bp);
 
         // Will need to be removed from free list
         // Maintain free lists
-        // delete_from_free_list(block);
-        // delete_from_free_list(next);
+        //delete_from_free_list(next_FT);
+        //delete_from_free_list(bp);
 
-        // Update header of current block so that size stretches to encompass NEXT
+        // Update the size in Header of Current block, to encompass Next Block size
         curr_size += GET_SIZE(next_FT->size);
-        bp->size = PACK(curr_size,FREE);
-        // Update footer of current block so that size stretches to encompass PREV
+        HDRP(bp)->size = PACK(curr_size,FREE); //Corrected
+        // Update the size in Footer of Adjacent next block,
         next_FT->size = PACK(curr_size,FREE);
+        //push_free_list();
 
-        //spit();
-
-        //return;
+        return(bp);
     }
 
     // Case 3: Coalesce with prev block
@@ -296,17 +329,14 @@ static void *coalesce(t_block bp)
         //delete_from_free_list(block);
         //delete_from_free_list(prev);
 
-        // Update header of PREV so that size stretches to encompass BLOCK
+        // Update the size in Header of Previous block, to encompass the size of current block
         prev_size += curr_size;
         prev_HD->size = PACK(prev_size,FREE);
 
-       // Update Footer of current block to ne
-        HDRP(bp)->size = PACK(prev_size,FREE);
-
-
-
-        //spit();
-        //return;
+       // Update Footer of current block
+        FTRP(bp)->size = PACK(prev_size,FREE); //Corrected
+        //push_free_list();
+        return(PREV_PAYLOAD(bp)); //Return pointer to Payload of previos block
     }
 
     // Coalesce both ends
@@ -318,28 +348,113 @@ static void *coalesce(t_block bp)
     	size_t next_size = GET_SIZE(next_FT->size);
 
         // Maintain free lists
-        //delete_from_free_list(block);
-        //delete_from_free_list(prev);
-        //delete_from_free_list(next);
+        //delete_from_free_list(prev_HD);
+        //delete_from_free_list(next_FT);
+        //delete_from_free_list();
 
-        // Update header of PREV & footer so NEXT
-    	prev_HD->size = PACK(prev_size + next_size,FREE);
-    	next_FT->size = PACK(prev_size + next_size,FREE);
+        // Update size in Header of prev block
+    	// and Footer of Next to encompass the sizes of current + prev + next blocks
+    	prev_HD->size = PACK(prev_size + curr_size + next_size,FREE);
+    	next_FT->size = PACK(prev_size + curr_size + next_size,FREE);
 
+    	//push_free_list();
 
-
-        //spit();
-        //return;
+    	return(PREV_PAYLOAD(bp)); //Return pointer to Payload of previos block
     }
+}
 
+// Argument - Pointer to the head of the block
+// Removes the block from free list.
+// Updates the free_list_root. Nulls Next/Prev in the HD/FT
+void delete_from_free_list(t_block current_hdrp)
+{
+	// bp -- pointer Header
+	// Pointer to the footer of the current block
+	// Footer contains the Prev pointer
+	t_block current_ftrp = FTRP_from_HDRP(current_hdrp);
 
-	return NULL;
+	// Pointers to Headers of prev/next blocks
+	t_block next_hdrp = current_hdrp->ptr; //Contains Next
+	t_block next_ftrp = FTRP_from_HDRP(next_hdrp); //Cointains Prev
+	t_block prev_hdrp = current_ftrp->ptr; //Contains Next
+	t_block prev_ftrp = FTRP_from_HDRP(prev_hdrp);//Cointains Prev
+
+	// Might need to add another check: Single block in free list
+
+	// Case 1. Removing from the start of free list
+	if(current_ftrp->ptr == NULL) {
+		// Move the free_list_root to the next free block
+		free_list_root = current_hdrp->ptr;
+		// Set NEXT Block New NULL, by setting
+		next_ftrp->ptr = NULL;
+	}
+	// Case 2. Removing from the end of free list
+	if (current_hdrp->ptr == NULL) {
+		//Set the PREV Block next_ptr to NULL
+		//Effectively making PREV block, new End block
+		prev_hdrp->ptr = NULL;
+	}
+	// Case 3. Removing between two blocks
+	else {
+		//Link Previous block to Next block
+		prev_hdrp->ptr = current_hdrp->ptr;
+		//Link Next block to Previous block
+		next_ftrp->ptr = current_ftrp->ptr;
+	}
+	//Set The NEXT/PREV pointers in current block = NULL
+	current_hdrp->ptr = NULL;
+	current_hdrp->ptr = NULL;
+}
+
+// ptr point to payload
+
+static void push_free_list(t_block payload)
+{
+	// Check if Root is empty
+	if(free_list_root == NULL) {
+		// Create first block in free list
+		HDRP(payload)->ptr = NULL;
+		FTRP(payload)->ptr = NULL;
+	}
+	// Check if Root is Not empty
+	else {
+		if(free_list_root != NULL) {
+			// set PREV ptr of current block == NULL
+			FTRP(payload)->ptr = NULL;
+
+			// Set NEXT ptr of current block == free_list_root
+			HDRP(payload)->ptr = free_list_root;
+
+			// Set PREV ptr of NEXT block to CURRENT block
+			FTRP_from_HDRP(free_list_root)->ptr = HDRP(payload);
+
+			// Set ptr == free_list_root (MOVE free block)
+			free_list_root = HDRP(payload);
+		}
+	}
 }
 
 
+void *split_block(t_block ptr,size_t carve_size)
+{
+	// Size of current free block
+	size_t block_size = GET_SIZE(HDRP(ptr)->size);
+	// Check if the current block after the split can contain Minimum size block
+	if(block_size >= carve_size + MIN_SIZE) {
+		// Remove current block from free list
+		delete_from_free_list(ptr);
+		// Set the Header & Footer of new block to sizes
+		// Null the pointers
+		HDRP(ptr)->size = PACK(carve_size,USED);
+		// Create the new free block and set its size
+		t_block new_block = NEXT_HDRP(ptr);
+		size_t new_size = block_size - carve_size;
 
-
-
-
-
-
+		// Push it onto the free list
+		new_block->size = PACK(new_size,FREE);
+		push_free_list(new_block)
+		}
+	// If block can't accommodate MIN_SIZE block after split
+	// return original pointer
+	return ptr;
+}
