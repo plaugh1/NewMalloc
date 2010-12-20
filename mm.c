@@ -47,6 +47,7 @@ static struct s_block *free_list_root;
 #define MIN_SIZE 24 //Header + Footer + Min payload of 8 bytes
 #define CHUNKSIZE 1<<8
 
+inline size_t MAX(size_t x, size_t y) { return x > y ? x : y; }
 
 #define HDRP(bp) (bp - 1) //Correct
 #define FTRP(bp) (bp + ((GET_SIZE(HDRP(bp)->size) - OVERHEAD) / DSIZE)) //Correct
@@ -141,7 +142,7 @@ void *mm_malloc(size_t size)
 {
     size_t asize;      /* adjusted block size */
     size_t extendsize; /* amount to extend heap if no fit */
-    char *bp;      
+    t_block bp;      
 
     /* Ignore spurious requests */
     if (size <= 0)
@@ -169,11 +170,13 @@ void *mm_malloc(size_t size)
 
 void mm_free(void *bp)
 {
-    size_t size = GET_SIZE(HDRP(bp));
+    t_block ptr = (t_block)(bp);
 
-    HDRP(bp)->size = PACK(size, FREE);
-    FTRP(bp)->size = PACK(size, FREE);
-    coalesce(bp);
+    size_t size = GET_SIZE(HDRP(ptr)->size);
+
+    HDRP(ptr)->size = PACK(size, FREE);
+    FTRP(ptr)->size = PACK(size, FREE);
+    coalesce(ptr);
 }
 
 void *mm_realloc(void *ptr, size_t size)
@@ -462,23 +465,26 @@ void *split_block(t_block ptr,size_t carve_size)
 		// Create the new free block and set its size
 		t_block new_block = NEXT_HDRP(ptr);
 		size_t new_size = block_size - carve_size;
-
+    
+        HDRP(new_block)->size = PACK(new_size,FREE);
+        FTRP(new_block)->size = PACK(new_size,FREE);
+        
 		// Push it onto the free list
-		}
+        push_free_list(new_block);
+	}
 	// If block can't accommodate MIN_SIZE block after split
 	// return original pointer
 	return ptr;
 }
 
 static void place(t_block bp, size_t asize)
-/* $end mmplace-proto */
 {
-    size_t csize = GET_SIZE(HDRP(bp));   
+    size_t csize = GET_SIZE(HDRP(bp)->size);   
 
     if ((csize - asize) >= (DSIZE + OVERHEAD)) { 
         HDRP(bp)->size = PACK(asize, USED);
         FTRP(bp)->size = PACK(asize, USED);
-        bp = NEXT_BLKP(bp);
+        bp = NEXT_BLOCK(bp);
         HDRP(bp)->size = PACK(csize-asize, FREE);
         FTRP(bp)->size = PACK(csize-asize, FREE);
     }
@@ -487,7 +493,6 @@ static void place(t_block bp, size_t asize)
         FTRP(bp)->size = PACK(csize, USED);
     }
 }
-/* $end mmplace */
 
 /* 
  * find_fit - Find a fit for a block with asize bytes 
@@ -500,8 +505,8 @@ static void *find_fit(size_t asize)
     t_block bp;
 
     /* first fit search */
-    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLOCK(bp)) {
-        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)->size) > 0; bp = NEXT_BLOCK(bp)) {
+        if (!GET_ALLOC(HDRP(bp)->size) && (asize <= GET_SIZE(HDRP(bp)->size))) {
             return bp;
         }
     }
