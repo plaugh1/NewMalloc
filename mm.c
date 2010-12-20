@@ -364,3 +364,30 @@ static void *coalesce(void *bp)
     }
     return bp;
 }
+
+/** 
+ * mm_checkheap - 
+ *   Check the heap for consistency 
+ */
+void mm_checkheap(int verbose) 
+{
+    char *bp = heap_listp;
+
+    if (verbose)
+	printf("Heap (%p):\n", heap_listp);
+
+    if ((GET_SIZE(HDRP(heap_listp)) != DSIZE) || !GET_ALLOC(HDRP(heap_listp)))
+	printf("Bad prologue header\n");
+    checkblock(heap_listp);
+
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+	if (verbose) 
+	    printblock(bp);
+	checkblock(bp);
+    }
+     
+    if (verbose)
+	printblock(bp);
+    if ((GET_SIZE(HDRP(bp)) != 0) || !(GET_ALLOC(HDRP(bp))))
+	printf("Bad epilogue header\n");
+}
