@@ -65,6 +65,8 @@ static void place(void *bp, size_t asize);
 static void *find_fit(size_t asize);
 static void *coalesce(void *bp);
 static void *search_list(size_t asize, int);
+static void printblock(void *bp); 
+static void checkblock(void *bp);
 void container_check(void);
 void add_to_free_list(void *);
 void remove_from_free_list(void *);
@@ -390,4 +392,31 @@ void mm_checkheap(int verbose)
 	printblock(bp);
     if ((GET_SIZE(HDRP(bp)) != 0) || !(GET_ALLOC(HDRP(bp))))
 	printf("Bad epilogue header\n");
+}
+
+static void printblock(void *bp) 
+{
+    size_t hsize, halloc, fsize, falloc;
+
+    hsize = GET_SIZE(HDRP(bp));
+    halloc = GET_ALLOC(HDRP(bp));  
+    fsize = GET_SIZE(FTRP(bp));
+    falloc = GET_ALLOC(FTRP(bp));  
+    
+    if (hsize == 0) {
+	printf("%p: EOL\n", bp);
+	return;
+    }
+
+    printf("%p: header: [%d:%c] footer: [%d:%c]\n", bp, 
+	   hsize, (halloc ? 'a' : 'f'), 
+	   fsize, (falloc ? 'a' : 'f')); 
+}
+
+static void checkblock(void *bp) 
+{
+    if ((size_t)bp % 8)
+	printf("Error: %p is not doubleword aligned\n", bp);
+    if (GET(HDRP(bp)) != GET(FTRP(bp)))
+	printf("Error: header does not match footer\n");
 }
