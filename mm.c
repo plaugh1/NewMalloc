@@ -45,6 +45,7 @@ static struct s_block *free_list_root;
 #define FREE 0
 #define USED 1
 #define MIN_SIZE 24 //Header + Footer + Min payload of 8 bytes
+#define CHUNKSIZE 1<<8
 
 
 #define HDRP(bp) (bp - 1) //Correct
@@ -134,57 +135,43 @@ int mm_init(void)
  * mm_malloc - Allocate a block by incrementing the brk pointer.
  *     Always allocate a block whose size is a multiple of the alignment.
  */
-void *mm_malloc(size_t size)
+void *mm_malloc(size_t size) 
 {
-	size = 11;
-	size_t asize;      /* adjusted block size */
-	char *bp;
-	char *bp2;
+    size_t asize;      /* adjusted block size */
+    size_t extendsize; /* amount to extend heap if no fit */
+    char *bp;      
 
-    // Ignore spurious requests
+    /* Ignore spurious requests */
     if (size <= 0)
-    	return NULL;
-    // Adjust block size to include overhead and alignment reqs.
-    // If requested size is less than Min size of
+        return NULL;
+
+    /* Adjust block size to include overhead and alignment reqs. */
     if (size <= DSIZE)
-    	asize = DSIZE + OVERHEAD;
-    //Size is above Min of 8 bytes, adjust to nearest multiple of 8 bytes
+        asize = DSIZE + OVERHEAD;
     else
-    	asize = DSIZE * ((size + (OVERHEAD) + (DSIZE-1)) / DSIZE);
-
-    //Extend the heap by adjusted size
-    //If fail to extend, return 0
-
-    //if ((bp = extend_heap(asize)) == NULL)
-    	//return NULL;
-    bp = extend_heap(asize);
-    bp2 = extend_heap(asize);
-
-
-    //bp2 = extend_heap(asize);
-
-    /*
-    // Search the free list for a fit
+        asize = DSIZE * ((size + (OVERHEAD) + (DSIZE-1)) / DSIZE);
+    
+    /* Search the free list for a fit */
     if ((bp = find_fit(asize)) != NULL) {
-    	place(bp, asize);
-    	return bp;
+        place(bp, asize);
+        return bp;
     }
 
-    // No fit found. Get more memory and place the block
+    /* No fit found. Get more memory and place the block */
     extendsize = MAX(asize,CHUNKSIZE);
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
-    	return NULL;
+        return NULL;
     place(bp, asize);
     return bp;
-    */
+} 
 
-	return 0;
-
-}
-void mm_free(void *ptr)
+void mm_free(void *bp)
 {
-	//push_free_list(ptr);
-	//coalesce(ptr);
+    size_t size = GET_SIZE(HDRP(bp));
+
+    HDRP(bp)->size = PACK(size, FREE);
+    FTRP(bp)->size = PACK(size, FREE);
+    coalesce(bp);
 }
 
 void *mm_realloc(void *ptr, size_t size)
@@ -385,27 +372,39 @@ void delete_from_free_list(t_block current_hdrp)
 
 	// Pointers to Headers of prev/next blocks
 	t_block next_hdrp = current_hdrp->ptr; //Contains Next
-	t_block next_ftrp = FTRP_from_HDRP(next_hdrp); //Cointains Prev
 	t_block prev_hdrp = current_ftrp->ptr; //Contains Next
-	t_block prev_ftrp = FTRP_from_HDRP(prev_hdrp)->ptr;//Cointains Prev
 
-	// Might need to add another check: Single block in free list
+
+
+	//Single block in free list
+	if ((current_ftrp->ptr == NULL) && (current_ftrp->ptr == NULL))
+	{
+		//nothing to do, block is already taken off the list
+		return;
+	}
+
+	t_block next_ftrp;// = FTRP_from_HDRP(next_hdrp); //Cointains Prev
+	t_block prev_ftrp;// = FTRP_from_HDRP(prev_hdrp); //Cointains Prev
 
 	// Case 1. Removing from the start of free list
 	if(current_ftrp->ptr == NULL) {
 		// Move the free_list_root to the next free block
 		free_list_root = current_hdrp->ptr;
 		// Set NEXT Block New NULL, by setting
+		next_ftrp = FTRP_from_HDRP(next_hdrp);
 		next_ftrp->ptr = NULL;
 	}
 	// Case 2. Removing from the end of free list
 	if (current_hdrp->ptr == NULL) {
 		//Set the PREV Block next_ptr to NULL
 		//Effectively making PREV block, new End block
+		prev_ftrp = FTRP_from_HDRP(prev_hdrp);
 		prev_hdrp->ptr = NULL;
 	}
-	// Case 3. Removing between two blocks
+	// Case 3. Removing in-between two blocks
 	else {
+		prev_ftrp = FTRP_from_HDRP(prev_hdrp);
+		next_ftrp = FTRP_from_HDRP(next_hdrp);
 		//Link Previous block to Next block
 		prev_hdrp->ptr = current_hdrp->ptr;
 		//Link Next block to Previous block
