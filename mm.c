@@ -87,7 +87,9 @@ static void printtag(t_block bp);
 static void *coalesce(t_block bp);
 static void delete_from_free_list(t_block bp);
 static void push_free_list(t_block ptr);
-static void *spit_block(t_block ptr,size_t carve_size);
+static void *split_block(t_block ptr,size_t carve_size);
+static void *find_fit(size_t asize);
+static void place(t_block bp, size_t asize);
 
 int mm_init(void)
 {
@@ -445,7 +447,7 @@ static void push_free_list(t_block payload)
 }
 
 
-void *spit_block(t_block ptr,size_t carve_size)
+void *split_block(t_block ptr,size_t carve_size)
 {
 	// Size of current free block
 	size_t block_size = GET_SIZE(HDRP(ptr)->size);
@@ -466,4 +468,42 @@ void *spit_block(t_block ptr,size_t carve_size)
 	// If block can't accommodate MIN_SIZE block after split
 	// return original pointer
 	return ptr;
+}
+
+static void place(t_block bp, size_t asize)
+/* $end mmplace-proto */
+{
+    size_t csize = GET_SIZE(HDRP(bp));   
+
+    if ((csize - asize) >= (DSIZE + OVERHEAD)) { 
+        HDRP(bp)->size = PACK(asize, USED);
+        FTRP(bp)->size = PACK(asize, USED);
+        bp = NEXT_BLKP(bp);
+        HDRP(bp)->size = PACK(csize-asize, FREE);
+        FTRP(bp)->size = PACK(csize-asize, FREE);
+    }
+    else { 
+        HDRP(bp)->size = PACK(csize, USED);
+        FTRP(bp)->size = PACK(csize, USED);
+    }
+}
+/* $end mmplace */
+
+/* 
+ * find_fit - Find a fit for a block with asize bytes 
+ */
+/* $begin mmfirstfit */
+/* $begin mmfirstfit-proto */
+static void *find_fit(size_t asize)
+/* $end mmfirstfit-proto */
+{
+    t_block bp;
+
+    /* first fit search */
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLOCK(bp)) {
+        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+            return bp;
+        }
+    }
+    return NULL; /* no fit */
 }
